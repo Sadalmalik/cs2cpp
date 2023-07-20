@@ -63,11 +63,13 @@ class GrammarParser:
         self.skip_symbols = ['\n', '\r', '\t', ' ']
         self.nodes = []
         self.root = None
+        self.exceptions = []
 
     def set_root(self, node):
         self.root = node
 
     def parse(self, text: str):
+        self.exceptions.clear()
         if self.root is None:
             raise Exception("Grammar root not defined!")
         return self.root.try_parse(TextIterator(text))
@@ -93,7 +95,7 @@ class GrammarParser:
 
 class NodeBase:
     def __init__(self, parser: GrammarParser, **kwargs):
-        self.name = kwargs.get('name', 'Node')
+        self.name = kwargs.get('name', None)
         self.handler = kwargs.get('handler', None)
         self.parser = parser
 
@@ -111,19 +113,21 @@ class NodeBase:
 class NodeConst(NodeBase):
     def __init__(self, parser: GrammarParser, term: str, **kwargs):
         super().__init__(parser, **kwargs)
+        self.name = self.name or 'CONST'
         self.term = term
         self.size = len(term)
 
     def try_parse(self, iterator: TextIterator):
         iterator = iterator.skip()
         if self.term == iterator.text[iterator.index:iterator.index + self.size]:
-            return self.handle(ASTNode('CONST', self.term, iterator=iterator)), iterator.next(self.size)
+            return self.handle(ASTNode(self.name, self.term, iterator=iterator)), iterator.next(self.size)
         return None, 0
 
 
 class NodeRegex(NodeBase):
     def __init__(self, parser: GrammarParser, regex, **kwargs):
         super().__init__(parser, **kwargs)
+        self.name = self.name or 'REGEX'
         self.regex = regex
 
     def try_parse(self, iterator: TextIterator):
@@ -131,13 +135,14 @@ class NodeRegex(NodeBase):
         m = re.match(self.regex, iterator.text[iterator.index:])
         if m is not None:
             g = m.group(0)
-            return self.handle(ASTNode('REGEX', g, iterator=iterator)), iterator.next(len(g))
+            return self.handle(ASTNode(self.name, g, iterator=iterator)), iterator.next(len(g))
         return None, 0
 
 
 class NodeGroup(NodeBase):
     def __init__(self, parser: GrammarParser, *nodes, **kwargs):
         super().__init__(parser, **kwargs)
+        self.name = self.name or 'GROUP'
         self.nodes = nodes
 
     def try_parse(self, iterator: TextIterator):
@@ -149,12 +154,13 @@ class NodeGroup(NodeBase):
             if val is None:
                 return None, sub_iterator
             result.append(val)
-        return self.handle(ASTNode('GROUP', result, iterator=iterator)), sub_iterator
+        return self.handle(ASTNode(self.name, result, iterator=iterator)), sub_iterator
 
 
 class NodeVariant(NodeBase):
     def __init__(self, parser: GrammarParser, *nodes, **kwargs):
         super().__init__(parser, **kwargs)
+        self.name = self.name or 'VARIANT'
         self.nodes = nodes
 
     def try_parse(self, iterator: TextIterator):
@@ -169,6 +175,7 @@ class NodeVariant(NodeBase):
 class NodeRepeat(NodeBase):
     def __init__(self, parser: GrammarParser, *args, **kwargs):
         super().__init__(parser, **kwargs)
+        self.name = self.name or 'REPEAT'
         self.min = kwargs.get('min', 0)
         self.max = kwargs.get('max', -1)
         self.node = NodeGroup(*args) if len(args) > 1 else args[0]
@@ -176,20 +183,22 @@ class NodeRepeat(NodeBase):
     def try_parse(self, iterator: TextIterator):
         iterator = iterator.skip()
         sub_iterator = iterator
-        counter = self.min
         result = []
+        counter = 0
         while True:
             if self.max != -1:
-                counter += 1
                 if counter >= self.max:
                     break
             val, sub_iterator = self.node.try_parse(sub_iterator)
             if val is None:
+                if counter < self.min:
+                    return None, iterator
                 break
             result.append(val)
+            counter += 1
         if len(result) == 0:
             return None, iterator
-        return self.handle(ASTNode('REPEAT', result, iterator=iterator)), sub_iterator
+        return self.handle(ASTNode(self.name, result, iterator=iterator)), sub_iterator
 
 
 class NodeOptional(NodeBase):
