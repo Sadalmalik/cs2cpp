@@ -1,4 +1,4 @@
-from GrammarParser import GrammarParser, TextIterator
+from GrammarParser import GrammarParser, TextIterator, ASTNode
 
 g = GrammarParser()
 examples = r'''
@@ -45,8 +45,26 @@ variation.add_handler(handle_variation)
 grouping.add_handler(handle_group)
 
 
+def walk_tree(ast_tree: ASTNode, handler):
+    if handler is None:
+        return
+    for node in ast_tree.data:
+        if isinstance(node, ASTNode):
+            walk_tree(node, handler)
+    handler(ast_tree)
+
+
 def resolve_grammar(grammar):
-    pass
+    def handler(ast_node: ASTNode):
+        if not isinstance(ast_node.data, list):
+            return
+        for i in range(len(ast_node.data)):
+            if isinstance(ast_node.data[i], tuple):
+                tag, name = ast_node.data[i]
+                if tag == 'require':
+                    ast_node.data[i] = grammar[name]
+    for name, element in grammar.items():
+        walk_tree(element, handler)
 
 
 resolve_grammar(self_grammar)
