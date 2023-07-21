@@ -96,14 +96,19 @@ class GrammarParser:
 class NodeBase:
     def __init__(self, parser: GrammarParser, **kwargs):
         self.name = kwargs.get('name', None)
-        self.handler = kwargs.get('handler', None)
         self.parser = parser
+        self.handlers = []
+        if 'handler' in kwargs:
+            self.handlers.append(kwargs['handler'])
+
+    def add_handler(self, handler):
+        self.handlers.append(handler)
 
     def handle(self, ast_node: ASTNode) -> ASTNode:
         if ast_node is None:
             return ast_node
-        if self.handler is not None:
-            return self.handler(ast_node)
+        for handler in self.handlers:
+            ast_node = handler(ast_node)
         return ast_node
 
     def try_parse(self, iterator: TextIterator):

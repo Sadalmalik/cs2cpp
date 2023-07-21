@@ -2,39 +2,76 @@ from GrammarParser import GrammarParser, TextIterator
 
 g = GrammarParser()
 examples = r'''
-    <root> : root of grammar
+    <root> : expression
     <sep> : ' \s\t\r\n'
     const : r/\w+/
     regex : r/r/((?![*+?])(?:[^\r\n\[/\\]|\\.|\[(?:[^\r\n\]\\]|\\.)*\])+)//
     variant : a | b | c
     group : a b c
-    repeat : [ element ]
-    optional : { element }
+    repeat : [ expression ]
+    optional : { expression }
+    expression : ( element ) | optional | repeat | variant | group
 '''
 
-word = g.regex(r'\w+', name='WORD')
-mark = g.regex(r'<\w+>', name='MARK')
-term = g.regex(r'"(?:\\"|[^\"])+"', name='TERM')
-regx = g.regex(r'r/((?![*+?])(?:[^\r\n\[/\\]|\\.|\[(?:[^\r\n\]\\]|\\.)*\])+)/', name='REGEX')
+self_grammar = dict()
+
+self_grammar['word'] = word = g.regex(r'\w+', name='word')
+self_grammar['mark'] = mark = g.regex(r'<\w+>', name='mark')
+self_grammar['term'] = term = g.regex(r'"(?:\\"|[^\"])+"', name='term')
+self_grammar['regx'] = regx = g.regex(r'r/((?![*+?])(?:[^\r\n\[/\\]|\\.|\[(?:[^\r\n\]\\]|\\.)*\])+)/', name='regex')
+self_grammar['symbol'] = symbol = g.variant(regx, mark, term, word)
+self_grammar['variation'] = variation = g.group(symbol, g.repeat(g.group(g.const('|'), symbol), min=1))
+self_grammar['grouping'] = grouping = g.group(symbol, g.repeat(symbol, min=1))
+self_grammar['optional'] = optional = g.group(g.const('{'), ('require', 'expression'), g.const('}'))
+self_grammar['repeat'] = repeat = g.group(g.const('['), ('require', 'expression'), g.const(']'))
+self_grammar['expression'] = expression = g.variant(
+    g.group(g.const('['), ('require', 'expression'), g.const(']')),
+    optional, repeat, grouping)
+self_grammar['line'] = line = g.group(g.variant(mark, word), g.const(':'), expression, g.const(';'))
+self_grammar['<root>'] = root = g.repeat(line)
 
 
-symbol = g.variant(regx, mark, term, word)
-
-
-def handle_group(ast_node):
+def handle_variation(ast_node):
     ast_node.data = [ast_node.data[0]] + [sub_group.data[1] for sub_group in ast_node.data[1].data]
     return ast_node
 
 
-variation_delimiter = g.const('|')
-variation = g.group(
-    symbol,
-    g.repeat(g.group(variation_delimiter, symbol), min=1),
-    handler=handle_group)
+def handle_group(ast_node):
+    ast_node.data = [ast_node.data[0]] + ast_node.data[1].data
+    return ast_node
+
+
+variation.add_handler(handle_variation)
+grouping.add_handler(handle_group)
+
+
+def resolve_grammar(grammar):
+    pass
+
+
+resolve_grammar(self_grammar)
+
+
+"expression: ( expression ) | optional | repeat | variant | group"
+
+
+expression = g.variant(
+    g.group(g.const('('), ('require', 'expression'), g.const(')')),
+
+)
+
+optional.nodes[1] = expression
+
 
 
 result, _ = variation.try_parse(TextIterator('x | <y> | z ;\n | a | b c d e'))
 print(result)
+result, _ = grouping.try_parse(TextIterator('a b c ; d e'))
+print(result)
+result, _ = optional.try_parse(TextIterator('{ x }'))
+print(result)
+
+
 
 # variation = g.group(term, g.repeat(g.group(g.const('|'), g.repeat())))
 # symbol = g.variant(term, regx, variation)
