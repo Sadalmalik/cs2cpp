@@ -22,6 +22,15 @@ class ASTNode:
             d = f"'{d}'"
         return f"[ {self.type}, {self.line}:{self.char}, {d} ]"
 
+    @staticmethod
+    def walk_tree(ast_tree, handler):
+        if handler is None:
+            return
+        for node in ast_tree.data:
+            if isinstance(node, ASTNode):
+                ASTNode.walk_tree(node, handler)
+        handler(ast_tree)
+
 
 class TextIterator:
     def __init__(self, _text, _index=0, _line=0, _char=0):
@@ -114,6 +123,11 @@ class NodeBase:
     def try_parse(self, iterator: TextIterator):
         return None, 0
 
+    def walk_tree(self, handler):
+        if handler is None:
+            return
+        handler(self)
+
 
 class NodeConst(NodeBase):
     def __init__(self, parser: GrammarParser, term: str, **kwargs):
@@ -161,6 +175,13 @@ class NodeGroup(NodeBase):
             result.append(val)
         return self.handle(ASTNode(self.name, result, iterator=iterator)), sub_iterator
 
+    def walk_tree(self, handler):
+        if handler is None:
+            return
+        for node in self.nodes:
+            node.walk_tree(handler)
+        handler(self)
+
 
 class NodeVariant(NodeBase):
     def __init__(self, parser: GrammarParser, *nodes, **kwargs):
@@ -175,6 +196,13 @@ class NodeVariant(NodeBase):
             if val is not None:
                 return self.handle(val), sub_iterator
         return None, iterator
+
+    def walk_tree(self, handler):
+        if handler is None:
+            return
+        for node in self.nodes:
+            node.walk_tree(handler)
+        handler(self)
 
 
 class NodeRepeat(NodeBase):
@@ -205,6 +233,12 @@ class NodeRepeat(NodeBase):
             return None, iterator
         return self.handle(ASTNode(self.name, result, iterator=iterator)), sub_iterator
 
+    def walk_tree(self, handler):
+        if handler is None:
+            return
+        self.node.walk_tree(handler)
+        handler(self)
+
 
 class NodeOptional(NodeBase):
     def __init__(self, parser: GrammarParser, node, **kwargs):
@@ -215,3 +249,9 @@ class NodeOptional(NodeBase):
         iterator = iterator.skip()
         val, sub_iterator = self.node.try_parse(iterator)
         return self.handle(ASTNode('OPTIONAL', val, iterator=iterator)), sub_iterator
+
+    def walk_tree(self, handler):
+        if handler is None:
+            return
+        self.node.walk_tree(handler)
+        handler(self)
